@@ -8,6 +8,11 @@ using System.Diagnostics.Metrics;
 using System.Runtime.CompilerServices;
 using System.Xml.Serialization;
 using System.ComponentModel.Design;
+// setting constants for bonus qn create an order with a special offer (5% off if order >= $50)
+const double DELIVERY_FEE = 5.00;
+const double DISCOUNT_RATE = 0.05;        
+const double DISCOUNT_THRESHOLD = 50.00; 
+
 
 //Q1 
 //Student Name:Lee Ruo Yu
@@ -637,23 +642,32 @@ void CreateOrder()
     }
 
     // total calculation
+    // total calculation
     double foodTotal = 0;
     foreach (OrderedFoodItem ofi in newOrder.OrderedFoodItems)
     {
         foodTotal += ofi.FoodItem.itemPrice * ofi.QtyOrdered;
     }
 
-    double deliveryFee = 5.00;
-    newOrder.OrderTotal = foodTotal + deliveryFee;
-    Console.WriteLine($"\nOrder Total: ${foodTotal:0.00} + ${deliveryFee:0.00} = ${(foodTotal+deliveryFee):0.00}");
-
-
-    Console.Write("Proceed to payment? [Y/N]: ");
-    if ((Console.ReadLine() ?? "").Trim().ToUpper() != "Y")
+    // Special Offer: 5% off for orders over $50 (food subtotal)
+    double discount = 0;
+    if (foodTotal > DISCOUNT_THRESHOLD)
     {
-        Console.WriteLine("Order cancelled.");
-        return;
+        discount = foodTotal * DISCOUNT_RATE;
     }
+
+    double discountedFoodTotal = foodTotal - discount;
+    double deliveryFee = DELIVERY_FEE;
+
+    newOrder.OrderTotal = discountedFoodTotal + deliveryFee;
+
+    if (discount > 0)
+    {
+        Console.WriteLine($"\nSpecial Offer Applied: 5% off (orders over ${DISCOUNT_THRESHOLD:0.00})");
+        Console.WriteLine($"Discount: -${discount:0.00}");
+    }
+
+    Console.WriteLine($"\nOrder Total: ${discountedFoodTotal:0.00} + ${deliveryFee:0.00} = ${(discountedFoodTotal + deliveryFee):0.00}");
 
     string paymentMethod = "";
 
@@ -689,7 +703,7 @@ void CreateOrder()
         $"{newOrderId},{customerEmail},{restaurantId}," +
         $"{deliveryDate:dd/MM/yyyy},{deliveryTime:hh\\:mm}," +
         $"{deliveryAddress},{DateTime.Now:dd/MM/yyyy HH:mm}," +
-        $"{(foodTotal+deliveryFee)},{newOrder.OrderStatus},\"{items}\"";
+        $"{newOrder.OrderTotal},{newOrder.OrderStatus},\"{items}\"";
 
     File.AppendAllText("orders.csv", csvLine + Environment.NewLine);
 
@@ -1256,18 +1270,29 @@ void ModifyOrder()
                 foodTotal += ofi.FoodItem.itemPrice * ofi.QtyOrdered;
             }
 
-            double deliveryFee = 5.00;
-            double finalTotal = foodTotal + deliveryFee;
+            // Special Offer: 5% off for orders over $50 (food subtotal)
+            double discount = 0;
+            if (foodTotal > DISCOUNT_THRESHOLD)
+            {
+                discount = foodTotal * DISCOUNT_RATE;
+            }
+
+            double discountedFoodTotal = foodTotal - discount;
+            double deliveryFee = DELIVERY_FEE;
+            double finalTotal = discountedFoodTotal + deliveryFee;
 
             selectedOrder.OrderTotal = finalTotal;
 
             Console.WriteLine();
+            if (discount > 0)
+            {
+                Console.WriteLine($"Special Offer Applied: 5% off (orders over ${DISCOUNT_THRESHOLD:0.00})");
+                Console.WriteLine($"Discount: -${discount:0.00}");
+            }
+
+            Console.WriteLine($"Order Total: ${discountedFoodTotal:0.00} + ${deliveryFee:0.00} (delivery) = ${finalTotal:0.00}");
             Console.WriteLine(
-                $"Order Total: ${foodTotal:0.00} + ${deliveryFee:0.00} (delivery) = ${finalTotal:0.00}"
-            );
-            Console.WriteLine(
-                $"Order {selectedOrder.OrderId} updated. New Total: ${finalTotal:0.00}"
-            );
+                $"Order {selectedOrder.OrderId} updated. New Total: ${finalTotal:0.00}");
         }
     }
 
