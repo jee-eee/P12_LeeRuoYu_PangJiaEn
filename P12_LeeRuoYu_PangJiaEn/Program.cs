@@ -1370,9 +1370,9 @@ void DisplayTotalOrderAmount()
     const double deliveryFee = 5.00;
     const double gruberooFeeRate = 0.30;
 
-    double grandDeliveredLessDelivery = 0.0; 
-    double grandRefunds = 0.0;               
-    double grandGruberooFee = 0.0;         
+    double grandSuccessfulLessDelivery = 0.0;
+    double grandRefunds = 0.0;
+    double grandTotalOrderAmount = 0.0;
 
     foreach (Restaurant r in restaurants)
     {
@@ -1391,33 +1391,39 @@ void DisplayTotalOrderAmount()
         foreach (var o in deliveredOrders)
         {
             double net = o.OrderTotal - deliveryFee;
-            if (net < 0) net = 0; // safety
+            if (net < 0) net = 0;
             deliveredLessDelivery += net;
         }
 
         double refunds = refundedOrders.Sum(o => o.OrderTotal);
 
-        double gruberooEarn = deliveredLessDelivery * gruberooFeeRate;
+        // NEW: total order amount = successful + refunds
+        double totalOrderAmount = deliveredLessDelivery + refunds;
+
+        // NEW: profit = total order amount - refunds
+        double profit = totalOrderAmount - refunds;
 
         Console.WriteLine();
         Console.WriteLine($"Restaurant: {r.restaurantName} ({r.restaurantId})");
         Console.WriteLine($" Successful (Delivered) Orders: {deliveredOrders.Count}");
-        Console.WriteLine($" Total Order Amount (less delivery fee): ${deliveredLessDelivery:0.00}");
+        Console.WriteLine($" Total Order Amount (less delivery fee): ${totalOrderAmount:0.00}");
+        Console.WriteLine($" Total Successful Order Amount (less delivery fee): ${deliveredLessDelivery:0.00}");
         Console.WriteLine($" Refunded Orders (Cancelled/Rejected): {refundedOrders.Count}");
         Console.WriteLine($" Total Refunds: ${refunds:0.00}");
-        Console.WriteLine($" Gruberoo Fee (30%): ${gruberooEarn:0.00}");
+        Console.WriteLine($" Total Profit: ${profit:0.00}");
 
-        grandDeliveredLessDelivery += deliveredLessDelivery;
+        grandSuccessfulLessDelivery += deliveredLessDelivery;
         grandRefunds += refunds;
-        grandGruberooFee += gruberooEarn;
+        grandTotalOrderAmount += totalOrderAmount;
     }
 
-    double finalAmount = grandGruberooFee - grandRefunds;
+    double grandProfit = grandTotalOrderAmount - grandRefunds;
 
     Console.WriteLine();
     Console.WriteLine("==== Overall Totals ====");
-    Console.WriteLine($"Total Order Amount (less delivery fee): ${grandDeliveredLessDelivery:0.00}");
+    Console.WriteLine($"Total Order Amount (less delivery fee): ${grandTotalOrderAmount:0.00}");
+    Console.WriteLine($"Total Successful Order Amount (less delivery fee): ${grandSuccessfulLessDelivery:0.00}");
     Console.WriteLine($"Total Refunds: ${grandRefunds:0.00}");
-    Console.WriteLine($"Final Amount Gruberoo Earns: ${finalAmount:0.00}");
+    Console.WriteLine($"Total Profit: ${grandProfit:0.00}");
     Console.WriteLine();
 }
