@@ -307,6 +307,7 @@ void RunMenu()
 }
 
 PrintWelcomeMessage();
+BulkProcessTodayOrders();
 RunMenu();
 
 //Q3 
@@ -468,6 +469,7 @@ void ListOrder()
 //Student Name:Pang Jia En
 void CreateOrder()
 {
+    bool usedFavourite = false;
     Console.WriteLine("Create New Order");
     Console.WriteLine("================");
 
@@ -479,6 +481,14 @@ void CreateOrder()
         return;
     }
 
+    Customer cust = customers.FirstOrDefault(c =>
+    c.EmailAddress.Equals(customerEmail, StringComparison.OrdinalIgnoreCase));
+
+    if (cust == null)
+    {
+        Console.WriteLine("Customer not found.");
+        return;
+    }
 
     Console.Write("Enter Restaurant ID: ");
     string restaurantId = (Console.ReadLine() ?? "").Trim().ToUpper();
@@ -530,53 +540,103 @@ void CreateOrder()
 
     newOrder.OrderStatus = "Pending";
 
-    // SHOW FOOD ITEMS 
-    List<FoodItem> availableItems = selectedRestaurant.menus[0].foodItems;
-
-    Console.WriteLine("\nAvailable Food Items:");
-    for (int i = 0; i < availableItems.Count; i++)
+    //REORDER FROM FAVOURITE
+    // Student Name:Pang Jia En
+    //Student Number:S10269305E
+    if (cust.FavouriteOrders.Count > 0)
     {
-        Console.WriteLine($"{i + 1}. {availableItems[i].itemName} - ${availableItems[i].itemPrice:0.00}");
+        Console.Write("Reorder from favourite? [Y/N]: ");
+        if ((Console.ReadLine() ?? "").Trim().ToUpper() == "Y")
+        {
+            Console.WriteLine("Favourite Orders:");
+            for (int i = 0; i < cust.FavouriteOrders.Count; i++)
+            {
+                Console.WriteLine($"{i + 1}. {cust.FavouriteOrders[i]}");
+            }
+
+            Console.Write("Select favourite: ");
+            if (!int.TryParse(Console.ReadLine(), out int favIndex) ||
+                favIndex < 1 || favIndex > cust.FavouriteOrders.Count)
+            {
+                Console.WriteLine("Invalid favourite selection.");
+                return;
+            }
+
+            favIndex--;
+
+            string favItems = cust.FavouriteOrders[favIndex];
+            string[] parts = favItems.Split('|');
+
+            foreach (string p in parts)
+            {
+                int idx = p.LastIndexOf(',');
+                string name = p.Substring(0, idx);
+                int qty = int.Parse(p.Substring(idx + 1));
+
+                FoodItem fi =
+                    selectedRestaurant.menus[0].foodItems
+                        .First(x => x.itemName.Equals(name, StringComparison.OrdinalIgnoreCase));
+
+                newOrder.AddOrderedFoodItem(new OrderedFoodItem(fi, qty));
+            }
+
+            Console.WriteLine("Favourite order loaded.");
+            usedFavourite = true;
+        }
     }
 
-    double foodTotal = 0;
-
-    // ADD ITEMS LOOP 
-    while (true)
+    // SHOW FOOD ITEMS 
+    if (!usedFavourite)
     {
-        Console.Write("Enter item number (0 to finish): ");
-        if (!int.TryParse(Console.ReadLine(), out int choice))
+        List<FoodItem> availableItems = selectedRestaurant.menus[0].foodItems;
+
+        Console.WriteLine("\nAvailable Food Items:");
+        for (int i = 0; i < availableItems.Count; i++)
         {
-            Console.WriteLine("Invalid input.");
-            continue;
+            Console.WriteLine($"{i + 1}. {availableItems[i].itemName} - ${availableItems[i].itemPrice:0.00}");
         }
 
-        if (choice == 0) break;
-
-        if (choice < 1 || choice > availableItems.Count)
+        // ADD ITEMS LOOP 
+        while (true)
         {
-            Console.WriteLine("Invalid item number.");
-            continue;
+            Console.Write("Enter item number (0 to finish): ");
+            if (!int.TryParse(Console.ReadLine(), out int choice))
+            {
+                Console.WriteLine("Invalid input.");
+                continue;
+            }
+
+            if (choice == 0) break;
+
+            if (choice < 1 || choice > availableItems.Count)
+            {
+                Console.WriteLine("Invalid item number.");
+                continue;
+            }
+
+            Console.Write("Enter quantity: ");
+            if (!int.TryParse(Console.ReadLine(), out int qty) || qty <= 0)
+            {
+                Console.WriteLine("Invalid quantity.");
+                continue;
+            }
+
+            FoodItem item = availableItems[choice - 1];
+            newOrder.AddOrderedFoodItem(new OrderedFoodItem(item, qty));
         }
+    }
 
-        Console.Write("Enter quantity: ");
-        if (!int.TryParse(Console.ReadLine(), out int qty) || qty <= 0)
-        {
-            Console.WriteLine("Invalid quantity.");
-            continue;
-        }
-
-        FoodItem item = availableItems[choice - 1];
-        foodTotal += item.itemPrice * qty;
-
-        newOrder.AddOrderedFoodItem(new OrderedFoodItem(item, qty));
+    // total calculation
+    double foodTotal = 0;
+    foreach (OrderedFoodItem ofi in newOrder.OrderedFoodItems)
+    {
+        foodTotal += ofi.FoodItem.itemPrice * ofi.QtyOrdered;
     }
 
     double deliveryFee = 5.00;
-    double finalTotal = foodTotal + deliveryFee;
-    newOrder.OrderTotal = finalTotal;
+    newOrder.OrderTotal = foodTotal + deliveryFee;
+    Console.WriteLine($"\nOrder Total: ${foodTotal:0.00} + ${deliveryFee:0.00} = ${(foodTotal+deliveryFee):0.00}");
 
-    Console.WriteLine($"\nOrder Total: ${foodTotal:0.00} + ${deliveryFee:0.00} = ${finalTotal:0.00}");
 
     Console.Write("Proceed to payment? [Y/N]: ");
     if ((Console.ReadLine() ?? "").Trim().ToUpper() != "Y")
@@ -619,11 +679,21 @@ void CreateOrder()
         $"{newOrderId},{customerEmail},{restaurantId}," +
         $"{deliveryDate:dd/MM/yyyy},{deliveryTime:hh\\:mm}," +
         $"{deliveryAddress},{DateTime.Now:dd/MM/yyyy HH:mm}," +
-        $"{finalTotal},{newOrder.OrderStatus},\"{items}\"";
+        $"{(foodTotal+deliveryFee)},{newOrder.OrderStatus},\"{items}\"";
 
     File.AppendAllText("orders.csv", csvLine + Environment.NewLine);
 
     Console.WriteLine($"Order {newOrderId} created successfully! Status: Pending");
+
+    // SAVE FAVOURITE 
+    // Student Name:Pang Jia En
+    //Student Number:S10269305E
+    Console.Write("Save this order as favourite? [Y/N]: ");
+    if ((Console.ReadLine() ?? "").Trim().ToUpper() == "Y")
+    {
+        cust.FavouriteOrders.Add(items);
+        Console.WriteLine("Order saved as favourite.");
+    }
 }
 
 
@@ -1351,3 +1421,58 @@ void DeleteOrder()
 
     Console.WriteLine();
 }
+
+//Advanced Features A
+//Student Number:S10269305E
+//Student Name:Pang Jia En
+void BulkProcessTodayOrders()
+{
+    Console.WriteLine("Bulk processing of unprocessed orders for current day");
+    Console.WriteLine("=====================================================");
+
+    DateTime now = DateTime.Now;
+
+    List<Order> pendingToday = orders
+        .Where(o => o.OrderStatus == "Pending" &&
+                    o.DeliveryDateTime.Date == now.Date)
+        .ToList();
+
+    Console.WriteLine($"Pending orders in queue: {pendingToday.Count}");
+
+    int processed = 0;
+    int preparing = 0;
+    int rejected = 0;
+
+    foreach (Order o in pendingToday)
+    {
+        TimeSpan diff = o.DeliveryDateTime - now;
+
+        if (diff.TotalHours < 1)
+        {
+            o.OrderStatus = "Rejected";
+            rejected++;
+        }
+        else
+        {
+            o.OrderStatus = "Preparing";
+            preparing++;
+        }
+
+        processed++;
+    }
+
+    int totalOrders = orders.Count;
+    double percentage = totalOrders == 0
+        ? 0
+        : (processed * 100.0 / totalOrders);
+
+    Console.WriteLine();
+    Console.WriteLine("Summary Statistics");
+    Console.WriteLine("------------------");
+    Console.WriteLine($"Orders processed: {processed}");
+    Console.WriteLine($"Preparing orders: {preparing}");
+    Console.WriteLine($"Rejected orders: {rejected}");
+    Console.WriteLine($"Auto-processed percentage: {percentage:0.00}%");
+    Console.WriteLine();
+}
+
