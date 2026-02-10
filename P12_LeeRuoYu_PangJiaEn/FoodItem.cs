@@ -9,7 +9,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace ConsoleApp1
+namespace P12_Lee_RuoYu_PangJiaEn
 {
     internal class FoodItem
     {
