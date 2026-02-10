@@ -6,7 +6,6 @@
 using P12_Lee_RuoYu_PangJiaEn;
 using System;
 using System.Collections.Generic;
-using System.Collections.Generic;
 
 namespace P12_Lee_RuoYu_PangJiaEn
 {
@@ -18,9 +17,12 @@ namespace P12_Lee_RuoYu_PangJiaEn
         private List<Order> orders;
         public IReadOnlyList<Order> Orders => orders;
 
+        public List<string> FavouriteOrders { get; set; } = new List<string>();
+
         public Customer()
         {
             orders = new List<Order>();
+            FavouriteOrders = new List<string>();
         }
 
         public Customer(string email, string name)
@@ -28,7 +30,9 @@ namespace P12_Lee_RuoYu_PangJiaEn
             EmailAddress = email;
             CustomerName = name;
             orders = new List<Order>();
+            FavouriteOrders = new List<string>();
         }
+
 
         public void AddOrder(Order order)
         {
