@@ -215,9 +215,26 @@ List<Order> LoadOrders(string filePath, List<Customer> customers, List<Restauran
     {
         if (string.IsNullOrWhiteSpace(line)) continue;
 
-        var fields = line.Split(',');
+        List<string> fields = new List<string>();
+        bool inQuotes = false;
+        string cur = "";
 
-        if (fields.Length < 6) continue;
+        foreach (char ch in line)
+        {
+            if (ch == '"')
+                inQuotes = !inQuotes;
+            else if (ch == ',' && !inQuotes)
+            {
+                fields.Add(cur);
+                cur = "";
+            }
+            else
+                cur += ch;
+        }
+        fields.Add(cur);
+
+
+        if (fields.Count < 6) continue;
 
         int orderId = int.Parse(fields[0].Trim());
         string customerEmail = fields[1].Trim();
@@ -228,49 +245,57 @@ List<Order> LoadOrders(string filePath, List<Customer> customers, List<Restauran
         string deliveryAddress;
 
         // orderId,email,restId,OrderDateTime,DeliveryDateTime,address,...
-        if (fields.Length >= 5 &&
-            DateTime.TryParse(fields[3], out DateTime odt) &&
-            DateTime.TryParse(fields[4], out DateTime ddt))
+        if (!DateTime.TryParseExact(fields[3].Trim(), "dd/MM/yyyy", null,
+            System.Globalization.DateTimeStyles.None, out DateTime dDate))
+            continue;
 
-        {
-            orderDateTime = odt;
-            deliveryDateTime = ddt;
-            deliveryAddress = string.Join(",", fields.Skip(5)).Trim();
-        }
-        else
-        {
-            // Must have date + time for BOTH order & delivery
-            if (fields.Length < 7)
-                continue;
+        if (!TimeSpan.TryParse(fields[4].Trim(), out TimeSpan dTime))
+            continue;
 
-            // Validate date/time formats BEFORE splitting
-            if (!fields[3].Contains("/") || !fields[4].Contains(":") ||
-                !fields[5].Contains("/") || !fields[6].Contains(":"))
-                continue;
+        deliveryDateTime = dDate.Add(dTime);
 
-            string[] oDate = fields[3].Split('/');
-            string[] oTime = fields[4].Split(':');
-            string[] dDate = fields[5].Split('/');
-            string[] dTime = fields[6].Split(':');
+        // Parse order created datetime
+        DateTime.TryParse(fields[6].Trim(), out orderDateTime);
 
-            if (oDate.Length != 3 || oTime.Length != 2 ||
-                dDate.Length != 3 || dTime.Length != 2)
-                continue;
-
-            orderDateTime = new DateTime(
-                int.Parse(oDate[2]), int.Parse(oDate[1]), int.Parse(oDate[0]),
-                int.Parse(oTime[0]), int.Parse(oTime[1]), 0);
-
-            deliveryDateTime = new DateTime(
-                int.Parse(dDate[2]), int.Parse(dDate[1]), int.Parse(dDate[0]),
-                int.Parse(dTime[0]), int.Parse(dTime[1]), 0);
-
-            deliveryAddress = string.Join(",", fields.Skip(7)).Trim();
-        }
+        // Address is ONE field only (already quote-safe parsed)
+        deliveryAddress = fields[5].Trim();
 
 
         Order order = new Order(orderId, orderDateTime, deliveryAddress, deliveryDateTime);
+        order.OrderStatus = "Pending";
         orders.Add(order);
+
+        if (fields.Count >= 10)
+        {
+            double.TryParse(fields[7], out double total);
+            order.OrderTotal = total;
+
+            order.OrderStatus = fields[8].Trim();
+
+            string itemsStr = fields[9].Trim().Trim('"');
+            if (!string.IsNullOrWhiteSpace(itemsStr))
+            {
+                string[] parts = itemsStr.Split('|', StringSplitOptions.RemoveEmptyEntries);
+                foreach (string p in parts)
+                {
+                    int idx = p.LastIndexOf(',');
+                    if (idx <= 0) continue;
+
+                    string name = p.Substring(0, idx).Trim();
+                    int.TryParse(p.Substring(idx + 1), out int qty);
+
+                    FoodItem found =
+                        restaurants.SelectMany(r => r.menus)
+                                   .SelectMany(m => m.foodItems)
+                                   .FirstOrDefault(x =>
+                                       x.itemName.Equals(name, StringComparison.OrdinalIgnoreCase))
+                        ?? new FoodItem(name, "", 0, "");
+
+                    order.AddOrderedFoodItem(new OrderedFoodItem(found, qty));
+                }
+            }
+        }
+
 
         Customer? customer = customers.Find(c =>
             c.EmailAddress.Equals(customerEmail, StringComparison.OrdinalIgnoreCase));
@@ -446,45 +471,84 @@ void CreateOrder()
 {
     Console.WriteLine("Create New Order");
     Console.WriteLine("================");
+
     Console.Write("Enter Customer Email: ");
     string customerEmail = Console.ReadLine() ?? "";
+    if (!customerEmail.Contains("@") || !customerEmail.Contains("."))
+    {
+        Console.WriteLine("Invalid email format.");
+        return;
+    }
+
+
     Console.Write("Enter Restaurant ID: ");
     string restaurantId = (Console.ReadLine() ?? "").Trim().ToUpper();
-    Console.Write("Enter Delivery Date (dd/mm/yyyy): ");
-    DateTime deliveryData = DateTime.Parse(Console.ReadLine()!);
-    Console.Write("Enter Delivery Time (hh:mm): ");
-    DateTime deliveryTime = DateTime.Parse(Console.ReadLine()!);
-    Console.Write("Enter Delivery Address: ");
-    string deliveryAddress = Console.ReadLine() ?? "";
+    Restaurant? selectedRestaurant =
+        restaurants.FirstOrDefault(r => r.restaurantId == restaurantId);
 
-    Restaurant? selectedRestaurant = restaurants.Find(r => r.restaurantId == restaurantId);
     if (selectedRestaurant == null)
     {
         Console.WriteLine("Invalid Restaurant ID.");
         return;
     }
 
-    List<FoodItem> availableItems = new List<FoodItem>();
-    int itemNumber = 1;
-
-    Console.WriteLine("Available Food Items: ");
-    foreach (Menu menu in selectedRestaurant.menus)
+    Console.Write("Enter Delivery Date (dd/mm/yyyy): ");
+    DateTime deliveryDate;
+    while (!DateTime.TryParseExact(
+        Console.ReadLine(),
+        "dd/MM/yyyy",
+        null,
+        System.Globalization.DateTimeStyles.None,
+        out deliveryDate))
     {
-        foreach (FoodItem item in menu.foodItems)
-        {
-            Console.WriteLine($"{itemNumber}. {item.itemName} - ${item.itemPrice:0.00}");
-            availableItems.Add(item);
-            itemNumber++;
-        }
+        Console.Write("Invalid date. Enter again (dd/mm/yyyy): ");
     }
 
-    double total = 0.0;
+    Console.Write("Enter Delivery Time (hh:mm): ");
+    TimeSpan deliveryTime;
+    while (!TimeSpan.TryParseExact(
+        Console.ReadLine(),
+        "hh\\:mm",
+        null,
+        out deliveryTime))
+    {
+        Console.Write("Invalid time. Enter again (hh:mm): ");
+    }
+
+    Console.Write("Enter Delivery Address: ");
+    string deliveryAddress = Console.ReadLine() ?? "";
+
+
+    // CREATE ORDER EARLY 
+    int newOrderId = orders.Count > 0 ? orders.Max(o => o.OrderId) + 1 : 1001;
+
+    Order newOrder = new Order(
+        newOrderId,
+        DateTime.Now,
+        deliveryAddress,
+        deliveryDate.Add(deliveryTime)
+    );
+
+    newOrder.OrderStatus = "Pending";
+
+    // SHOW FOOD ITEMS 
+    List<FoodItem> availableItems = selectedRestaurant.menus[0].foodItems;
+
+    Console.WriteLine("\nAvailable Food Items:");
+    for (int i = 0; i < availableItems.Count; i++)
+    {
+        Console.WriteLine($"{i + 1}. {availableItems[i].itemName} - ${availableItems[i].itemPrice:0.00}");
+    }
+
+    double foodTotal = 0;
+
+    // ADD ITEMS LOOP 
     while (true)
     {
         Console.Write("Enter item number (0 to finish): ");
         if (!int.TryParse(Console.ReadLine(), out int choice))
         {
-            Console.WriteLine("Invalid input. Please enter a number.");
+            Console.WriteLine("Invalid input.");
             continue;
         }
 
@@ -497,70 +561,72 @@ void CreateOrder()
         }
 
         Console.Write("Enter quantity: ");
-        if (!int.TryParse(Console.ReadLine(), out int quantity) || quantity <= 0)
+        if (!int.TryParse(Console.ReadLine(), out int qty) || qty <= 0)
         {
             Console.WriteLine("Invalid quantity.");
             continue;
         }
 
-        FoodItem selectedItem = availableItems[choice - 1];
-        total += selectedItem.itemPrice * quantity;
+        FoodItem item = availableItems[choice - 1];
+        foodTotal += item.itemPrice * qty;
+
+        newOrder.AddOrderedFoodItem(new OrderedFoodItem(item, qty));
     }
 
+    double deliveryFee = 5.00;
+    double finalTotal = foodTotal + deliveryFee;
+    newOrder.OrderTotal = finalTotal;
 
-    string specialRequest = "";
-    Console.Write("Add special request? [Y/N]: ");
-    string specialChoice = (Console.ReadLine() ?? "").Trim();
-
-    if (specialChoice.ToUpper() == "Y")
-    {
-        Console.Write("Enter special request: ");
-        specialRequest = Console.ReadLine()!;
-    }
-
-    double deliveryfee = 5.00;
-    Console.WriteLine();
-    Console.WriteLine($"Order Total: ${total:0.00} + ${deliveryfee:0.00} (delivery) = ${(total + deliveryfee):0.00}");
+    Console.WriteLine($"\nOrder Total: ${foodTotal:0.00} + ${deliveryFee:0.00} = ${finalTotal:0.00}");
 
     Console.Write("Proceed to payment? [Y/N]: ");
-    string proceedPayment = (Console.ReadLine() ?? "").Trim();
-    if (proceedPayment.ToUpper() != "Y")
+    if ((Console.ReadLine() ?? "").Trim().ToUpper() != "Y")
     {
         Console.WriteLine("Order cancelled.");
         return;
     }
 
-    Console.WriteLine("Payment method:");
-    Console.Write("[CC Credit Card / [PP] Paypal / [CD] Cash on Delivery: ");
-    string paymentMethod = (Console.ReadLine() ?? "").Trim().ToUpper();
+    string paymentMethod = "";
 
-    //create order
-    int maxId = 1000;
-    foreach (Order o in orders)
+    while (true)
     {
-        if (o.OrderId > maxId) maxId = o.OrderId;
-    }
-    int newOrderId = maxId + 1;
-    Order newOrder = new Order(newOrderId, DateTime.Now, deliveryAddress, deliveryData.AddHours(deliveryTime.Hour).AddMinutes(deliveryTime.Minute));
+        Console.Write("Payment method [CC / PP / CD]: ");
+        paymentMethod = (Console.ReadLine() ?? "").Trim().ToUpper();
 
-    newOrder.OrderStatus = "Pending";
+        if (paymentMethod == "CC" || paymentMethod == "PP" || paymentMethod == "CD")
+            break;
+
+        Console.WriteLine("Invalid payment method. Please enter CC, PP, or CD.");
+    }
+
     newOrder.OrderPaymentMethod = paymentMethod;
 
-    //add to customer
-    Customer? customer = customers.Find(c => c.EmailAddress == customerEmail);
-    if (customer != null)
-    {
-        customer.AddOrder(newOrder);
-    }
 
-    //add to restaurant
+    //  SAVE IN MEMORY 
+    orders.Add(newOrder);
+
+    customers.FirstOrDefault(c =>
+        c.EmailAddress.Equals(customerEmail, StringComparison.OrdinalIgnoreCase))
+        ?.AddOrder(newOrder);
+
     selectedRestaurant.orders.Add(newOrder);
 
-    string csvline = $"{newOrderId},{customerEmail},{restaurantId},{DateTime.Now},{deliveryData.AddHours(deliveryTime.Hour).AddMinutes(deliveryTime.Minute)},{deliveryAddress},{paymentMethod},Pending";
-    File.AppendAllText("orders.csv", csvline + Environment.NewLine);
+    // SAVE TO CSV 
+    string items = string.Join("|",
+        newOrder.OrderedFoodItems.Select(x =>
+            $"{x.FoodItem.itemName},{x.QtyOrdered}"));
 
-    Console.WriteLine($"Order {newOrderId} created successfully! Status:Preaparing ");
+    string csvLine =
+        $"{newOrderId},{customerEmail},{restaurantId}," +
+        $"{deliveryDate:dd/MM/yyyy},{deliveryTime:hh\\:mm}," +
+        $"{deliveryAddress},{DateTime.Now:dd/MM/yyyy HH:mm}," +
+        $"{finalTotal},{newOrder.OrderStatus},\"{items}\"";
+
+    File.AppendAllText("orders.csv", csvLine + Environment.NewLine);
+
+    Console.WriteLine($"Order {newOrderId} created successfully! Status: Pending");
 }
+
 
 //Q6 
 //Student Name:Lee Ruo Yu
@@ -843,6 +909,12 @@ void ModifyOrder()
     Console.Write("Enter Customer Email: ");
     string custEmail = (Console.ReadLine() ?? "").Trim();
 
+    if (!custEmail.Contains("@") || !custEmail.Contains("."))
+    {
+        Console.WriteLine("Invalid email format.");
+        return;
+    }
+
     Customer cust = customers.FirstOrDefault(c =>
         c.EmailAddress.Equals(custEmail, StringComparison.OrdinalIgnoreCase));
 
@@ -852,6 +924,7 @@ void ModifyOrder()
         return;
     }
 
+    // Read CSV using YOUR HEADER
     Dictionary<int, (string email, string status, string items)> csvMap =
         new Dictionary<int, (string, string, string)>();
 
@@ -862,58 +935,43 @@ void ModifyOrder()
         foreach (var line in lines.Skip(1))
         {
             if (string.IsNullOrWhiteSpace(line)) continue;
-
             List<string> fields = new List<string>();
             bool inQuotes = false;
             string cur = "";
 
             foreach (char ch in line)
             {
-                if (ch == '"') inQuotes = !inQuotes;
+                if (ch == '"')
+                    inQuotes = !inQuotes;
                 else if (ch == ',' && !inQuotes)
                 {
                     fields.Add(cur);
                     cur = "";
                 }
-                else cur += ch;
+                else
+                    cur += ch;
             }
             fields.Add(cur);
+
+            if (fields.Count < 10) continue;
 
             if (!int.TryParse(fields[0].Trim(), out int id)) continue;
 
             string email = fields[1].Trim();
-
-            string status = "";
-            string[] known = { "Pending", "Cancelled", "Preparing", "Delivered", "Rejected" };
-            foreach (string f in fields)
-            {
-                if (known.Any(x => x.Equals(f.Trim(), StringComparison.OrdinalIgnoreCase)))
-                {
-                    status = f.Trim();
-                    break;
-                }
-            }
-
-            string items = "";
-            if (fields.Count >= 10)
-                items = fields[fields.Count - 1].Trim('"');
+            string status = fields[8].Trim();   // Status column
+            string items = fields[9].Trim().Trim('"'); // Items column
 
             csvMap[id] = (email, status, items);
         }
     }
 
+    // Get ONLY real pending orders for this customer
     List<Order> pendingOrders = new List<Order>();
 
-    foreach (var kvp in csvMap)
+    foreach (Order o in cust.Orders)
     {
-        int id = kvp.Key;
-        var info = kvp.Value;
-
-        if (!info.email.Equals(custEmail, StringComparison.OrdinalIgnoreCase)) continue;
-        if (!info.status.Equals("Pending", StringComparison.OrdinalIgnoreCase)) continue;
-
-        Order o = orders.FirstOrDefault(x => x.OrderId == id);
-        if (o != null)
+        if (csvMap.ContainsKey(o.OrderId) &&
+            csvMap[o.OrderId].status.Equals("Pending", StringComparison.OrdinalIgnoreCase))
         {
             o.OrderStatus = "Pending";
             pendingOrders.Add(o);
@@ -944,6 +1002,7 @@ void ModifyOrder()
         return;
     }
 
+    // Load items from CSV if empty
     if (selectedOrder.OrderedFoodItems.Count == 0 &&
         csvMap.ContainsKey(orderId) &&
         !string.IsNullOrWhiteSpace(csvMap[orderId].items))
@@ -961,7 +1020,8 @@ void ModifyOrder()
             FoodItem found =
                 restaurants.SelectMany(r => r.menus)
                            .SelectMany(m => m.foodItems)
-                           .FirstOrDefault(x => x.itemName.Equals(name, StringComparison.OrdinalIgnoreCase))
+                           .FirstOrDefault(x =>
+                               x.itemName.Equals(name, StringComparison.OrdinalIgnoreCase))
                 ?? new FoodItem(name, "", 0, "");
 
             selectedOrder.OrderedFoodItems.Add(new OrderedFoodItem(found, qty));
@@ -979,9 +1039,14 @@ void ModifyOrder()
     Console.WriteLine("Delivery Date/Time:");
     Console.WriteLine($"{selectedOrder.DeliveryDateTime:dd/MM/yyyy, HH:mm}");
 
-    Console.Write("\nModify: [1] Items [2] Address [3] Delivery Time: ");
-    int choice = int.Parse(Console.ReadLine());
+    Console.Write("\nModify: [1] Items [2] Address [3] Delivery Time:  ");
+    if (!int.TryParse(Console.ReadLine(), out int choice))
+    {
+        Console.WriteLine("Invalid choice.");
+        return;
+    }
 
+    //  MODIFY ITEMS 
     if (choice == 1)
     {
         Restaurant rest = restaurants.FirstOrDefault(r => r.orders.Contains(selectedOrder));
@@ -1013,13 +1078,13 @@ void ModifyOrder()
             }
 
             if (itemChoice == 0)
-            {
                 break;
-            }
-            else if (itemChoice == 1)
+
+            if (itemChoice == 1)
             {
                 Console.WriteLine("\nAvailable Food Items:");
                 List<FoodItem> items = rest.menus[0].foodItems;
+
                 for (int j = 0; j < items.Count; j++)
                 {
                     Console.WriteLine($"{j + 1}. {items[j].itemName} - ${items[j].itemPrice}");
@@ -1041,9 +1106,8 @@ void ModifyOrder()
                 }
 
                 selectedOrder.AddOrderedFoodItem(
-                    new OrderedFoodItem(items[addChoice - 1], qty));
-
-                Console.WriteLine($"Added {qty} x {items[addChoice - 1].itemName}.");
+                    new OrderedFoodItem(items[addChoice - 1], qty)
+                );
             }
             else if (itemChoice == 2)
             {
@@ -1064,23 +1128,48 @@ void ModifyOrder()
 
                 OrderedFoodItem removed =
                     selectedOrder.OrderedFoodItems[removeChoice - 1];
-                selectedOrder.RemoveOrderedFoodItem(removed);
 
-                Console.WriteLine($"Removed {removed.FoodItem.itemName}.");
+                selectedOrder.RemoveOrderedFoodItem(removed);
             }
             else
             {
                 Console.WriteLine("Invalid choice.");
+                continue;
             }
+
+            // ===== RECALCULATE TOTAL (SAME AS CREATE ORDER) =====
+            double foodTotal = 0;
+            foreach (OrderedFoodItem ofi in selectedOrder.OrderedFoodItems)
+            {
+                foodTotal += ofi.FoodItem.itemPrice * ofi.QtyOrdered;
+            }
+
+            double deliveryFee = 5.00;
+            double finalTotal = foodTotal + deliveryFee;
+
+            selectedOrder.OrderTotal = finalTotal;
+
+            Console.WriteLine();
+            Console.WriteLine(
+                $"Order Total: ${foodTotal:0.00} + ${deliveryFee:0.00} (delivery) = ${finalTotal:0.00}"
+            );
+            Console.WriteLine(
+                $"Order {selectedOrder.OrderId} updated. New Total: ${finalTotal:0.00}"
+            );
         }
     }
+
+    // MODIFY ADDRESS 
     else if (choice == 2)
     {
         Console.Write("Enter new Address: ");
         selectedOrder.DeliveryAddress = Console.ReadLine();
 
-        Console.WriteLine($"Order {orderId} updated. New Address: {selectedOrder.DeliveryAddress}");
+        Console.WriteLine(
+            $"Order {orderId} updated. New Address: {selectedOrder.DeliveryAddress}");
     }
+
+    // MODIFY DELIVERY TIME 
     else if (choice == 3)
     {
         Console.Write("Enter new Delivery Time (hh:mm): ");
@@ -1090,14 +1179,13 @@ void ModifyOrder()
             selectedOrder.DeliveryDateTime.Date + t;
 
         Console.WriteLine(
-            $"\nOrder {orderId} updated. New Delivery Time: {selectedOrder.DeliveryDateTime:HH:mm}");
+            $"Order {orderId} updated. New Delivery Time: {selectedOrder.DeliveryDateTime:HH:mm}");
     }
 
-    foreach (Order o in orders)
-        o.CalculateOrderTotal();
 
+    // SAVE CSV (same header)
     List<string> outLines = new List<string>();
-    outLines.Add("OrderID,CustomerEmail,RestaurantID,DeliveryDate,DeliveryTime,DeliveryAddress,OrderDateTime,OrderTotal,OrderStatus,OrderedItems");
+    outLines.Add("OrderId,CustomerEmail,RestaurantId,DeliveryDate,DeliveryTime,DeliveryAddress,CreatedDateTime,TotalAmount,Status,Items");
 
     foreach (Order o in orders)
     {
@@ -1111,11 +1199,11 @@ void ModifyOrder()
         outLines.Add(
             $"{o.OrderId},{owner.EmailAddress},{rest.restaurantId}," +
             $"{o.DeliveryDateTime:dd/MM/yyyy},{o.DeliveryDateTime:HH:mm}," +
-            $"{o.DeliveryAddress},{o.OrderDateTime:dd/MM/yyyy HH:mm}," +
+            $"\"{o.DeliveryAddress}\",{ o.OrderDateTime:dd/MM/yyyy HH:mm}," +
             $"{o.OrderTotal},{o.OrderStatus},\"{items}\"");
     }
 
-    File.WriteAllLines("orders - Copy.csv", outLines);
+    File.WriteAllLines("orders.csv", outLines);
 }
 
 
@@ -1130,6 +1218,21 @@ void DeleteOrder()
 
     Console.Write("Enter Customer Email: ");
     string custEmail = Console.ReadLine();
+    if (!custEmail.Contains("@") || !custEmail.Contains("."))
+    {
+        Console.WriteLine("Invalid email format.");
+        return;
+    }
+
+    Customer cust = customers.FirstOrDefault(c =>
+    c.EmailAddress.Equals(custEmail, StringComparison.OrdinalIgnoreCase));
+
+    if (cust == null)
+    {
+        Console.WriteLine("Customer not found.");
+        return;
+    }
+
 
     // Build lookup from orders.csv: OrderId -> (customerEmail, restaurantId)
     Dictionary<int, (string custEmail, string restId)> orderInfo = new Dictionary<int, (string, string)>();
@@ -1219,6 +1322,27 @@ void DeleteOrder()
     {
         target.OrderStatus = "Cancelled";
         refundStack.Push(target);
+        List<string> outLines = new List<string>();
+        outLines.Add("OrderId,CustomerEmail,RestaurantId,DeliveryDate,DeliveryTime,DeliveryAddress,CreatedDateTime,TotalAmount,Status,Items");
+
+        foreach (Order o in orders)
+        {
+            Customer owner = customers.FirstOrDefault(c => c.Orders.Contains(o));
+            Restaurant rest = restaurants.FirstOrDefault(r => r.orders.Contains(o));
+            if (owner == null || rest == null) continue;
+
+            string items = string.Join("|",
+                o.OrderedFoodItems.Select(x => $"{x.FoodItem.itemName},{x.QtyOrdered}"));
+
+            outLines.Add(
+                $"{o.OrderId},{owner.EmailAddress},{rest.restaurantId}," +
+                $"{o.DeliveryDateTime:dd/MM/yyyy},{o.DeliveryDateTime:HH:mm}," +
+                $"\"{o.DeliveryAddress}\",{o.OrderDateTime:dd/MM/yyyy HH:mm}," +
+                $"{o.OrderTotal},{o.OrderStatus},\"{items}\"");
+        }
+
+        File.WriteAllLines("orders.csv", outLines);
+
         Console.WriteLine($"Order {target.OrderId} cancelled. Refund processed: ${target.OrderTotal:0.00}");
     }
     else
