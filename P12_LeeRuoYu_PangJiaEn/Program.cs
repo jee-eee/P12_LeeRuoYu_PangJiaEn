@@ -9,77 +9,6 @@ using System.Runtime.CompilerServices;
 using System.Xml.Serialization;
 using System.ComponentModel.Design;
 
-
-//Start of program
-
-//Main Menu
-void DisplayMenu()
-{
-    Console.WriteLine("=====Gruberoo Food Delivery System=====");
-    Console.WriteLine("1. List all restaurants and menu items");
-    Console.WriteLine("2. List all order");
-    Console.WriteLine("3. Create a new order");
-    Console.WriteLine("4. Process an order");
-    Console.WriteLine("5. Modify an existing order");
-    Console.WriteLine("6. Delete an existing order");
-    Console.WriteLine("0. Exit");
-}
-
-void RunMenu()
-{
-    int input = -1;
-
-    while (input != 0)
-    {
-        DisplayMenu();
-        Console.Write("Enter your choice: ");
-        string? choiceText = Console.ReadLine();
-        if (!int.TryParse(choiceText, out input))
-        {
-            Console.WriteLine("Invalid choice. Please enter a number.");
-            Console.WriteLine();
-            continue;
-        }
-        Console.WriteLine();
-        if (input == 1)
-        {
-            ListRestaurants();
-        }
-        else if (input == 2)
-        {
-            ListOrder();
-        }
-        else if (input == 3)
-        {
-            CreateOrder();
-        }
-
-        else if (input == 4)
-        {
-            ProcessOrder();
-        }
-
-        else if (input == 5)
-        {
-            ModifyOrder();
-        }
-
-        else if (input == 6)
-        {
-            DeleteOrder();
-        }
-
-        else if (input == 0)
-        {
-            break;
-        }
-
-        else
-        {
-            Console.WriteLine("Invalid choice. Please try again.");
-        }
-    }
-}
 //Q1 
 //Student Name:Lee Ruo Yu
 //Student Number: S10273008B
@@ -162,19 +91,6 @@ void LoadFoodItems(string filePath, List<Restaurant> restaurants)
 List<Customer> customers = LoadCustomers("customers.csv");
 List<Order> orders = LoadOrders("orders.csv", customers, restaurants);
 Stack<Order> refundStack = new Stack<Order>();
-
-try
-{
-    RunMenu();
-}
-catch (Exception ex)
-{
-    Console.WriteLine("Program crashed:");
-    Console.WriteLine(ex);
-}
-
-Console.WriteLine("\nPress ENTER to exit...");
-Console.ReadLine();
 
 List<Customer> LoadCustomers(string filePath)
 {
@@ -309,6 +225,89 @@ List<Order> LoadOrders(string filePath, List<Customer> customers, List<Restauran
     return orders;
 }
 
+//Start of program
+void PrintWelcomeMessage()
+{
+    Console.WriteLine("Welcome to the Gruberoo Food Delivery System");
+    Console.WriteLine($"{restaurants.Count} restaurants loaded!");
+    Console.WriteLine($"{restaurants.Sum(r => r.menus.Sum(m => m.foodItems.Count))} food items loaded!");
+    Console.WriteLine($"{customers.Count} customers loaded!");
+    Console.WriteLine($"{orders.Count} orders loaded!");
+    Console.WriteLine();
+}
+
+
+//Main Menu
+void DisplayMenu()
+{
+    Console.WriteLine("=====Gruberoo Food Delivery System=====");
+    Console.WriteLine("1. List all restaurants and menu items");
+    Console.WriteLine("2. List all order");
+    Console.WriteLine("3. Create a new order");
+    Console.WriteLine("4. Process an order");
+    Console.WriteLine("5. Modify an existing order");
+    Console.WriteLine("6. Delete an existing order");
+    Console.WriteLine("0. Exit");
+}
+
+void RunMenu()
+{
+    int input = -1;
+
+    while (input != 0)
+    {
+        DisplayMenu();
+        Console.Write("Enter your choice: ");
+        string? choiceText = Console.ReadLine();
+        if (!int.TryParse(choiceText, out input))
+        {
+            Console.WriteLine("Invalid choice. Please enter a number.");
+            Console.WriteLine();
+            continue;
+        }
+        Console.WriteLine();
+        if (input == 1)
+        {
+            ListRestaurants();
+        }
+        else if (input == 2)
+        {
+            ListOrder();
+        }
+        else if (input == 3)
+        {
+            CreateOrder();
+        }
+
+        else if (input == 4)
+        {
+            ProcessOrder();
+        }
+
+        else if (input == 5)
+        {
+            ModifyOrder();
+        }
+
+        else if (input == 6)
+        {
+            DeleteOrder();
+        }
+
+        else if (input == 0)
+        {
+            break;
+        }
+
+        else
+        {
+            Console.WriteLine("Invalid choice. Please try again.");
+        }
+    }
+}
+
+PrintWelcomeMessage();
+RunMenu();
 
 //Q3 
 //Student Number:S10269305E
