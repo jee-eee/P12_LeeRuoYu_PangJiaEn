@@ -9,7 +9,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace P12_Lee_RuoYu_PangJiaEn
+namespace ConsoleApp1
 {
     internal class Customer
     {
@@ -34,6 +34,11 @@ namespace P12_Lee_RuoYu_PangJiaEn
         public void AddOrder(Order order)
         {
             orders.Add(order);
+        }
+
+        public List<Order> Orders
+        {
+            get { return orders; }
         }
 
         public void DisplayAllOrders()
