@@ -7,6 +7,7 @@ using System.ComponentModel;
 using System.Diagnostics.Metrics;
 using System.Runtime.CompilerServices;
 using System.Xml.Serialization;
+using System.ComponentModel.Design;
 
 
 //Start of program
@@ -201,40 +202,88 @@ List<Customer> LoadCustomers(string filePath)
 List<Order> LoadOrders(string filePath, List<Customer> customers, List<Restaurant> restaurants)
 {
     List<Order> orders = new List<Order>();
+
     if (!File.Exists(filePath))
     {
         Console.WriteLine($"[Q2] Missing file: {filePath}");
         return orders;
     }
+
     var lines = File.ReadAllLines(filePath);
 
     foreach (var line in lines.Skip(1))
     {
+        if (string.IsNullOrWhiteSpace(line)) continue;
+
         var fields = line.Split(',');
+
         if (fields.Length < 6) continue;
+
         int orderId = int.Parse(fields[0].Trim());
         string customerEmail = fields[1].Trim();
         string restaurantId = fields[2].Trim();
-        DateTime orderDateTime = DateTime.Parse(fields[3].Trim());
-        DateTime deliveryDateTime = DateTime.Parse(fields[4].Trim());
-        string deliveryAddress = fields[5].Trim();
+
+        DateTime orderDateTime;
+        DateTime deliveryDateTime;
+        string deliveryAddress;
+
+        // orderId,email,restId,OrderDateTime,DeliveryDateTime,address,...
+        if (fields.Length >= 5 &&
+            DateTime.TryParse(fields[3], out DateTime odt) &&
+            DateTime.TryParse(fields[4], out DateTime ddt))
+
+        {
+            orderDateTime = odt;
+            deliveryDateTime = ddt;
+            deliveryAddress = string.Join(",", fields.Skip(5)).Trim();
+        }
+        else
+        {
+            // Must have date + time for BOTH order & delivery
+            if (fields.Length < 7)
+                continue;
+
+            // Validate date/time formats BEFORE splitting
+            if (!fields[3].Contains("/") || !fields[4].Contains(":") ||
+                !fields[5].Contains("/") || !fields[6].Contains(":"))
+                continue;
+
+            string[] oDate = fields[3].Split('/');
+            string[] oTime = fields[4].Split(':');
+            string[] dDate = fields[5].Split('/');
+            string[] dTime = fields[6].Split(':');
+
+            if (oDate.Length != 3 || oTime.Length != 2 ||
+                dDate.Length != 3 || dTime.Length != 2)
+                continue;
+
+            orderDateTime = new DateTime(
+                int.Parse(oDate[2]), int.Parse(oDate[1]), int.Parse(oDate[0]),
+                int.Parse(oTime[0]), int.Parse(oTime[1]), 0);
+
+            deliveryDateTime = new DateTime(
+                int.Parse(dDate[2]), int.Parse(dDate[1]), int.Parse(dDate[0]),
+                int.Parse(dTime[0]), int.Parse(dTime[1]), 0);
+
+            deliveryAddress = string.Join(",", fields.Skip(7)).Trim();
+        }
+
 
         Order order = new Order(orderId, orderDateTime, deliveryAddress, deliveryDateTime);
         orders.Add(order);
 
-        Customer? customer = customers.Find(c => c.EmailAddress == customerEmail);
-        if (customer != null)
-        {
-            customer.AddOrder(order);
-        }
-        Restaurant? restaurant = restaurants.Find(r => r.restaurantId == restaurantId);
-        if (restaurant != null)
-        {
-            restaurant.orders.Add(order);
-        }
+        Customer? customer = customers.Find(c =>
+            c.EmailAddress.Equals(customerEmail, StringComparison.OrdinalIgnoreCase));
+        customer?.AddOrder(order);
+
+        Restaurant? restaurant = restaurants.Find(r =>
+            r.restaurantId.Equals(restaurantId, StringComparison.OrdinalIgnoreCase));
+        restaurant?.orders.Add(order);
     }
+
     return orders;
 }
+
 
 //Q3 
 //Student Number:S10269305E
@@ -790,20 +839,21 @@ void ModifyOrder()
 {
     Console.WriteLine("Modify Order");
     Console.WriteLine("============");
+
     Console.Write("Enter Customer Email: ");
     string custEmail = (Console.ReadLine() ?? "").Trim();
 
-    Customer? cust = customers.Find(c => c.EmailAddress.Equals(custEmail, StringComparison.OrdinalIgnoreCase));
+    Customer cust = customers.FirstOrDefault(c =>
+        c.EmailAddress.Equals(custEmail, StringComparison.OrdinalIgnoreCase));
+
     if (cust == null)
     {
         Console.WriteLine("Customer not found.");
         return;
     }
 
-    // Build from orders.csv:
-    // OrderId -> (email, status, items)
-    Dictionary<int, (string email, string status, string items)> csvMap
-        = new Dictionary<int, (string, string, string)>();
+    Dictionary<int, (string email, string status, string items)> csvMap =
+        new Dictionary<int, (string, string, string)>();
 
     if (File.Exists("orders.csv"))
     {
@@ -813,74 +863,46 @@ void ModifyOrder()
         {
             if (string.IsNullOrWhiteSpace(line)) continue;
 
-            // CSV split (supports quotes)
             List<string> fields = new List<string>();
             bool inQuotes = false;
             string cur = "";
 
-            for (int i = 0; i < line.Length; i++)
+            foreach (char ch in line)
             {
-                char ch = line[i];
-
-                if (ch == '"')
-                {
-                    if (inQuotes && i + 1 < line.Length && line[i + 1] == '"')
-                    {
-                        cur += '"';
-                        i++;
-                    }
-                    else
-                    {
-                        inQuotes = !inQuotes;
-                    }
-                }
+                if (ch == '"') inQuotes = !inQuotes;
                 else if (ch == ',' && !inQuotes)
                 {
                     fields.Add(cur);
                     cur = "";
                 }
-                else
-                {
-                    cur += ch;
-                }
+                else cur += ch;
             }
             fields.Add(cur);
-
-            if (fields.Count < 3) continue;
 
             if (!int.TryParse(fields[0].Trim(), out int id)) continue;
 
             string email = fields[1].Trim();
 
-            // detect status from any column (because your orders.csv layout may differ)
             string status = "";
             string[] known = { "Pending", "Cancelled", "Preparing", "Delivered", "Rejected" };
             foreach (string f in fields)
             {
-                string s = f.Trim();
-                if (known.Any(x => x.Equals(s, StringComparison.OrdinalIgnoreCase)))
+                if (known.Any(x => x.Equals(f.Trim(), StringComparison.OrdinalIgnoreCase)))
                 {
-                    status = char.ToUpper(s[0]) + s.Substring(1).ToLower();
+                    status = f.Trim();
                     break;
                 }
             }
 
-            // items normally last column IF your file stores it
-            // only treat it as items if it looks like your format (has | and a comma for qty)
             string items = "";
-            if (fields.Count >= 7)
-            {
-                string last = fields[fields.Count - 1].Trim().Trim('"');
-                if (last.Contains("|") && last.Contains(","))
-                    items = last;
-            }
+            if (fields.Count >= 10)
+                items = fields[fields.Count - 1].Trim('"');
 
             csvMap[id] = (email, status, items);
         }
     }
 
-    // Pending Orders list should be based on CSV email + Pending
-    List<int> pendingIds = new List<int>();
+    List<Order> pendingOrders = new List<Order>();
 
     foreach (var kvp in csvMap)
     {
@@ -890,108 +912,66 @@ void ModifyOrder()
         if (!info.email.Equals(custEmail, StringComparison.OrdinalIgnoreCase)) continue;
         if (!info.status.Equals("Pending", StringComparison.OrdinalIgnoreCase)) continue;
 
-        // to match sample (remove 36/37 etc)
-        if (id < 1000) continue;
-
-        pendingIds.Add(id);
+        Order o = orders.FirstOrDefault(x => x.OrderId == id);
+        if (o != null)
+        {
+            o.OrderStatus = "Pending";
+            pendingOrders.Add(o);
+        }
     }
-
-    pendingIds = pendingIds.OrderBy(x => x).ToList();
 
     Console.WriteLine("Pending Orders:");
-    foreach (int id in pendingIds)
-    {
-        Console.WriteLine(id); // exactly like sample (no "Order ID:")
-    }
+    foreach (Order o in pendingOrders)
+        Console.WriteLine($"Order ID: {o.OrderId}");
 
-    if (pendingIds.Count == 0)
+    if (pendingOrders.Count == 0)
     {
         Console.WriteLine("No pending orders.");
         return;
     }
 
-    int orderId;
-    while (true)
+    Console.Write("Enter Order ID: ");
+    if (!int.TryParse(Console.ReadLine(), out int orderId))
     {
-        Console.Write("Enter Order ID: ");
-        if (!int.TryParse(Console.ReadLine(), out orderId))
-        {
-            Console.WriteLine("Invalid Order ID.");
-            continue;
-        }
-
-        if (!pendingIds.Contains(orderId))
-        {
-            Console.WriteLine("Order ID not in pending list.");
-            continue;
-        }
-
-        break;
-    }
-
-    // Find the Order object
-    Order? selectedOrder = orders.Find(o => o.OrderId == orderId);
-    if (selectedOrder == null)
-    {
-        Console.WriteLine("Order not found in system.");
+        Console.WriteLine("Invalid Order ID.");
         return;
     }
 
-    // Fill items from CSV into OrderedFoodItems if empty
+    Order selectedOrder = pendingOrders.FirstOrDefault(o => o.OrderId == orderId);
+    if (selectedOrder == null)
+    {
+        Console.WriteLine("Order not in pending list.");
+        return;
+    }
+
     if (selectedOrder.OrderedFoodItems.Count == 0 &&
         csvMap.ContainsKey(orderId) &&
         !string.IsNullOrWhiteSpace(csvMap[orderId].items))
     {
-        string itemsStr = csvMap[orderId].items;
+        string[] parts = csvMap[orderId].items.Split('|', StringSplitOptions.RemoveEmptyEntries);
 
-        // format: Chicken Rice,2|Beef Burger,1
-        string[] parts = itemsStr.Split('|', StringSplitOptions.RemoveEmptyEntries);
-
-        foreach (string raw in parts)
+        foreach (string p in parts)
         {
-            string part = raw.Trim();
-            if (part.Length == 0) continue;
+            int idx = p.LastIndexOf(',');
+            if (idx <= 0) continue;
 
-            int commaIndex = part.LastIndexOf(',');
-            if (commaIndex <= 0) continue;
+            string name = p.Substring(0, idx).Trim();
+            int qty = int.Parse(p.Substring(idx + 1));
 
-            string itemName = part.Substring(0, commaIndex).Trim();
-            string qtyText = part.Substring(commaIndex + 1).Trim();
-            if (!int.TryParse(qtyText, out int qty)) qty = 0;
-
-            // find matching FoodItem in any menu (so name is correct)
-            FoodItem? found = null;
-            foreach (var rr in restaurants)
-            {
-                foreach (var m in rr.menus)
-                {
-                    found = m.foodItems.FirstOrDefault(x =>
-                        x.itemName.Equals(itemName, StringComparison.OrdinalIgnoreCase));
-                    if (found != null) break;
-                }
-                if (found != null) break;
-            }
-            if (found == null) found = new FoodItem(itemName, "", 0, "");
+            FoodItem found =
+                restaurants.SelectMany(r => r.menus)
+                           .SelectMany(m => m.foodItems)
+                           .FirstOrDefault(x => x.itemName.Equals(name, StringComparison.OrdinalIgnoreCase))
+                ?? new FoodItem(name, "", 0, "");
 
             selectedOrder.OrderedFoodItems.Add(new OrderedFoodItem(found, qty));
         }
     }
 
-    // ===== Display like sample =====
     Console.WriteLine("\nOrder Items:");
-    if (selectedOrder.OrderedFoodItems.Count == 0)
-    {
-        Console.WriteLine(" - (No items)");
-    }
-    else
-    {
-        int count = 1;
-        foreach (OrderedFoodItem ofi in selectedOrder.OrderedFoodItems)
-        {
-            Console.WriteLine($"{count}. {ofi.FoodItem.itemName} - {ofi.QtyOrdered}");
-            count++;
-        }
-    }
+    int count = 1;
+    foreach (OrderedFoodItem ofi in selectedOrder.OrderedFoodItems)
+        Console.WriteLine($"{count++}. {ofi.FoodItem.itemName} - {ofi.QtyOrdered}");
 
     Console.WriteLine("Address:");
     Console.WriteLine(selectedOrder.DeliveryAddress);
@@ -999,43 +979,146 @@ void ModifyOrder()
     Console.WriteLine("Delivery Date/Time:");
     Console.WriteLine($"{selectedOrder.DeliveryDateTime:dd/MM/yyyy, HH:mm}");
 
-    int choice;
-    while (true)
-    {
-        Console.Write("\nModify: [1] Items [2] Address [3] Delivery Time: ");
-        if (int.TryParse(Console.ReadLine(), out choice) && (choice == 1 || choice == 2 || choice == 3))
-            break;
-        Console.WriteLine("Invalid choice.");
-    }
+    Console.Write("\nModify: [1] Items [2] Address [3] Delivery Time: ");
+    int choice = int.Parse(Console.ReadLine());
 
     if (choice == 1)
     {
-        Console.Write("Enter new Items: ");
-        string item = Console.ReadLine() ?? "";
-        Console.WriteLine($"\nOrder {orderId} updated. New Items: {item}");
+        Restaurant rest = restaurants.FirstOrDefault(r => r.orders.Contains(selectedOrder));
+        if (rest == null)
+        {
+            Console.WriteLine("Restaurant not found for this order.");
+            return;
+        }
+
+        while (true)
+        {
+            Console.WriteLine("\nCurrent Items:");
+            int i = 1;
+            foreach (OrderedFoodItem ofi in selectedOrder.OrderedFoodItems)
+            {
+                Console.WriteLine($"{i}. {ofi.FoodItem.itemName} x{ofi.QtyOrdered}");
+                i++;
+            }
+
+            Console.WriteLine("\n[1] Add Item");
+            Console.WriteLine("[2] Remove Item");
+            Console.WriteLine("[0] Done");
+            Console.Write("Choice: ");
+
+            if (!int.TryParse(Console.ReadLine(), out int itemChoice))
+            {
+                Console.WriteLine("Invalid input.");
+                continue;
+            }
+
+            if (itemChoice == 0)
+            {
+                break;
+            }
+            else if (itemChoice == 1)
+            {
+                Console.WriteLine("\nAvailable Food Items:");
+                List<FoodItem> items = rest.menus[0].foodItems;
+                for (int j = 0; j < items.Count; j++)
+                {
+                    Console.WriteLine($"{j + 1}. {items[j].itemName} - ${items[j].itemPrice}");
+                }
+
+                Console.Write("Enter item number to add: ");
+                if (!int.TryParse(Console.ReadLine(), out int addChoice) ||
+                    addChoice < 1 || addChoice > items.Count)
+                {
+                    Console.WriteLine("Invalid item number.");
+                    continue;
+                }
+
+                Console.Write("Enter quantity: ");
+                if (!int.TryParse(Console.ReadLine(), out int qty) || qty <= 0)
+                {
+                    Console.WriteLine("Invalid quantity.");
+                    continue;
+                }
+
+                selectedOrder.AddOrderedFoodItem(
+                    new OrderedFoodItem(items[addChoice - 1], qty));
+
+                Console.WriteLine($"Added {qty} x {items[addChoice - 1].itemName}.");
+            }
+            else if (itemChoice == 2)
+            {
+                if (selectedOrder.OrderedFoodItems.Count == 0)
+                {
+                    Console.WriteLine("No items to remove.");
+                    continue;
+                }
+
+                Console.Write("Enter item number to remove: ");
+                if (!int.TryParse(Console.ReadLine(), out int removeChoice) ||
+                    removeChoice < 1 ||
+                    removeChoice > selectedOrder.OrderedFoodItems.Count)
+                {
+                    Console.WriteLine("Invalid item number.");
+                    continue;
+                }
+
+                OrderedFoodItem removed =
+                    selectedOrder.OrderedFoodItems[removeChoice - 1];
+                selectedOrder.RemoveOrderedFoodItem(removed);
+
+                Console.WriteLine($"Removed {removed.FoodItem.itemName}.");
+            }
+            else
+            {
+                Console.WriteLine("Invalid choice.");
+            }
+        }
     }
     else if (choice == 2)
     {
         Console.Write("Enter new Address: ");
-        string newAddress = Console.ReadLine() ?? "";
-        selectedOrder.DeliveryAddress = newAddress;
+        selectedOrder.DeliveryAddress = Console.ReadLine();
 
-        Console.WriteLine($"\nOrder {orderId} updated. New Address: {newAddress}");
+        Console.WriteLine($"Order {orderId} updated. New Address: {selectedOrder.DeliveryAddress}");
     }
-    else // choice == 3
+    else if (choice == 3)
     {
-        TimeSpan newTime;
-        while (true)
-        {
-            Console.Write("Enter new Delivery Time (hh:mm): ");
-            if (TimeSpan.TryParse(Console.ReadLine(), out newTime)) break;
-            Console.WriteLine("Invalid time. Please enter hh:mm.");
-        }
+        Console.Write("Enter new Delivery Time (hh:mm): ");
+        TimeSpan t = TimeSpan.Parse(Console.ReadLine());
 
-        selectedOrder.DeliveryDateTime = selectedOrder.DeliveryDateTime.Date + newTime;
-        Console.WriteLine($"\nOrder {orderId} updated. New Delivery Time: {selectedOrder.DeliveryDateTime:HH:mm}");
+        selectedOrder.DeliveryDateTime =
+            selectedOrder.DeliveryDateTime.Date + t;
+
+        Console.WriteLine(
+            $"\nOrder {orderId} updated. New Delivery Time: {selectedOrder.DeliveryDateTime:HH:mm}");
     }
+
+    foreach (Order o in orders)
+        o.CalculateOrderTotal();
+
+    List<string> outLines = new List<string>();
+    outLines.Add("OrderID,CustomerEmail,RestaurantID,DeliveryDate,DeliveryTime,DeliveryAddress,OrderDateTime,OrderTotal,OrderStatus,OrderedItems");
+
+    foreach (Order o in orders)
+    {
+        Customer owner = customers.FirstOrDefault(c => c.Orders.Contains(o));
+        Restaurant rest = restaurants.FirstOrDefault(r => r.orders.Contains(o));
+        if (owner == null || rest == null) continue;
+
+        string items = string.Join("|",
+            o.OrderedFoodItems.Select(x => $"{x.FoodItem.itemName},{x.QtyOrdered}"));
+
+        outLines.Add(
+            $"{o.OrderId},{owner.EmailAddress},{rest.restaurantId}," +
+            $"{o.DeliveryDateTime:dd/MM/yyyy},{o.DeliveryDateTime:HH:mm}," +
+            $"{o.DeliveryAddress},{o.OrderDateTime:dd/MM/yyyy HH:mm}," +
+            $"{o.OrderTotal},{o.OrderStatus},\"{items}\"");
+    }
+
+    File.WriteAllLines("orders - Copy.csv", outLines);
 }
+
+
 
 //Q8 
 //Student Name:Lee Ruo Yu

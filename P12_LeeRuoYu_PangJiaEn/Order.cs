@@ -30,6 +30,8 @@ namespace P12_Lee_RuoYu_PangJiaEn
 
         public List<OrderedFoodItem> OrderedFoodItems { get; set; }
 
+        public string SpecialRequest { get; set; }
+
         public Order()
         {
             OrderedFoodItems = new List<OrderedFoodItem>();
@@ -43,9 +45,10 @@ namespace P12_Lee_RuoYu_PangJiaEn
             DeliveryAddress = deliveryAddress;
             DeliveryDateTime = deliveryDateTime;
             OrderStatus = "Pending";
-            OrderPaid = false;
             OrderedFoodItems = new List<OrderedFoodItem>();
+            SpecialRequest = "";
         }
+
 
         public double CalculateOrderTotal()
         {
