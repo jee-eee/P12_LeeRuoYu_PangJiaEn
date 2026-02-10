@@ -37,12 +37,12 @@ namespace P12_Lee_RuoYu_PangJiaEn
                 orders.Add(order);
         }
 
-        public bool RemoveOrder(Order order)
+        public List<Order> Orders
         {
-            return orders.Remove(order);
+            get { return orders; }
         }
 
-        public void DisplayOrders()
+        public void DisplayAllOrders()
         {
             foreach (Order o in orders)
             {
