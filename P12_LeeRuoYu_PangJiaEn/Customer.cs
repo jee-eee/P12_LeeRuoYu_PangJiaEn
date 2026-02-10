@@ -3,7 +3,9 @@
 // Student Name : Pang Jia En
 // Partner Name : Lee Ruo Yu
 //==========================================================
+using P12_Lee_RuoYu_PangJiaEn;
 using System;
+using System.Collections.Generic;
 using System.Collections.Generic;
 
 namespace P12_Lee_RuoYu_PangJiaEn
@@ -14,7 +16,6 @@ namespace P12_Lee_RuoYu_PangJiaEn
         public string CustomerName { get; set; }
 
         private List<Order> orders;
-
         public IReadOnlyList<Order> Orders => orders;
 
         public Customer()
@@ -37,9 +38,9 @@ namespace P12_Lee_RuoYu_PangJiaEn
                 orders.Add(order);
         }
 
-        public List<Order> Orders
+        public bool RemoveOrder(Order order)
         {
-            get { return orders; }
+            return orders.Remove(order);
         }
 
         public void DisplayAllOrders()
@@ -49,11 +50,10 @@ namespace P12_Lee_RuoYu_PangJiaEn
                 Console.WriteLine($"Order ID: {o.OrderId} | Status: {o.OrderStatus}");
             }
         }
-
         public override string ToString()
         {
             return $"Customer Name: {CustomerName} | Email: {EmailAddress}";
         }
     }
-
 }
+
