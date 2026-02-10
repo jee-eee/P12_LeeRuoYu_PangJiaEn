@@ -1180,10 +1180,26 @@ void ModifyOrder()
                     continue;
                 }
 
-                selectedOrder.AddOrderedFoodItem(
-                    new OrderedFoodItem(items[addChoice - 1], qty)
-                );
+                FoodItem selectedItem = items[addChoice - 1];
+
+                // check if item already exists in order
+                OrderedFoodItem existing =
+                    selectedOrder.OrderedFoodItems.FirstOrDefault(x =>
+                        x.FoodItem.itemName.Equals(selectedItem.itemName, StringComparison.OrdinalIgnoreCase));
+
+                if (existing != null)
+                {
+                    existing.QtyOrdered += qty;
+                }
+                else
+                {
+                    // add as new item
+                    selectedOrder.AddOrderedFoodItem(
+                        new OrderedFoodItem(selectedItem, qty)
+                    );
+                }
             }
+
             else if (itemChoice == 2)
             {
                 if (selectedOrder.OrderedFoodItems.Count == 0)
@@ -1201,11 +1217,28 @@ void ModifyOrder()
                     continue;
                 }
 
-                OrderedFoodItem removed =
+                OrderedFoodItem target =
                     selectedOrder.OrderedFoodItems[removeChoice - 1];
 
-                selectedOrder.RemoveOrderedFoodItem(removed);
+                Console.Write($"Enter quantity to remove (max {target.QtyOrdered}): ");
+                if (!int.TryParse(Console.ReadLine(), out int removeQty) || removeQty <= 0)
+                {
+                    Console.WriteLine("Invalid quantity.");
+                    continue;
+                }
+
+                if (removeQty >= target.QtyOrdered)
+                {
+                    // remove item completely
+                    selectedOrder.RemoveOrderedFoodItem(target);
+                }
+                else
+                {
+                    // reduce quantity only
+                    target.QtyOrdered -= removeQty;
+                }
             }
+
             else
             {
                 Console.WriteLine("Invalid choice.");
