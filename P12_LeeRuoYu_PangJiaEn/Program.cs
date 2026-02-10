@@ -247,6 +247,7 @@ void DisplayMenu()
     Console.WriteLine("4. Process an order");
     Console.WriteLine("5. Modify an existing order");
     Console.WriteLine("6. Delete an existing order");
+    Console.WriteLine("7. Display total order amount (Advanced)");
     Console.WriteLine("0. Exit");
 }
 
@@ -292,6 +293,11 @@ void RunMenu()
         else if (input == 6)
         {
             DeleteOrder();
+        }
+
+        else if (input == 7)
+        {
+            DisplayTotalOrderAmount();
         }
 
         else if (input == 0)
@@ -1422,7 +1428,7 @@ void DeleteOrder()
     Console.WriteLine();
 }
 
-//Advanced Features A
+//Advanced Features A: BulkProcessTodayOrders
 //Student Number:S10269305E
 //Student Name:Pang Jia En
 void BulkProcessTodayOrders()
@@ -1476,3 +1482,65 @@ void BulkProcessTodayOrders()
     Console.WriteLine();
 }
 
+// Advanced Feature B: Display total order amount
+// Student Name: Lee Ruo Yu
+// Student Number: S10273008B
+void DisplayTotalOrderAmount()
+{
+    Console.WriteLine("Display Total Order Amount");
+    Console.WriteLine("==========================");
+
+    const double deliveryFee = 5.00;
+    const double gruberooFeeRate = 0.30;
+
+    double grandDeliveredLessDelivery = 0.0; 
+    double grandRefunds = 0.0;               
+    double grandGruberooFee = 0.0;         
+
+    foreach (Restaurant r in restaurants)
+    {
+        var deliveredOrders = r.orders
+            .Where(o => o.OrderStatus != null &&
+                        o.OrderStatus.Equals("Delivered", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        var refundedOrders = r.orders
+            .Where(o => o.OrderStatus != null &&
+                        (o.OrderStatus.Equals("Cancelled", StringComparison.OrdinalIgnoreCase) ||
+                         o.OrderStatus.Equals("Rejected", StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+
+        double deliveredLessDelivery = 0.0;
+        foreach (var o in deliveredOrders)
+        {
+            double net = o.OrderTotal - deliveryFee;
+            if (net < 0) net = 0; // safety
+            deliveredLessDelivery += net;
+        }
+
+        double refunds = refundedOrders.Sum(o => o.OrderTotal);
+
+        double gruberooEarn = deliveredLessDelivery * gruberooFeeRate;
+
+        Console.WriteLine();
+        Console.WriteLine($"Restaurant: {r.restaurantName} ({r.restaurantId})");
+        Console.WriteLine($" Successful (Delivered) Orders: {deliveredOrders.Count}");
+        Console.WriteLine($" Total Order Amount (less delivery fee): ${deliveredLessDelivery:0.00}");
+        Console.WriteLine($" Refunded Orders (Cancelled/Rejected): {refundedOrders.Count}");
+        Console.WriteLine($" Total Refunds: ${refunds:0.00}");
+        Console.WriteLine($" Gruberoo Fee (30%): ${gruberooEarn:0.00}");
+
+        grandDeliveredLessDelivery += deliveredLessDelivery;
+        grandRefunds += refunds;
+        grandGruberooFee += gruberooEarn;
+    }
+
+    double finalAmount = grandGruberooFee - grandRefunds;
+
+    Console.WriteLine();
+    Console.WriteLine("==== Overall Totals ====");
+    Console.WriteLine($"Total Order Amount (less delivery fee): ${grandDeliveredLessDelivery:0.00}");
+    Console.WriteLine($"Total Refunds: ${grandRefunds:0.00}");
+    Console.WriteLine($"Final Amount Gruberoo Earns: ${finalAmount:0.00}");
+    Console.WriteLine();
+}
