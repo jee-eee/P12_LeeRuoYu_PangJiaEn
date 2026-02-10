@@ -248,6 +248,7 @@ void DisplayMenu()
     Console.WriteLine("5. Modify an existing order");
     Console.WriteLine("6. Delete an existing order");
     Console.WriteLine("7. Display total order amount (Advanced)");
+    Console.WriteLine("8.Bulk process pending orders (Advanced)");
     Console.WriteLine("0. Exit");
 }
 
@@ -300,6 +301,10 @@ void RunMenu()
             DisplayTotalOrderAmount();
         }
 
+        else if (input ==8)
+        {
+            BulkProcessPendingOrders();
+        }
         else if (input == 0)
         {
             break;
@@ -313,7 +318,6 @@ void RunMenu()
 }
 
 PrintWelcomeMessage();
-BulkProcessTodayOrders();
 RunMenu();
 
 //Q3 
@@ -1464,55 +1468,54 @@ void DeleteOrder()
 //Advanced Features A: BulkProcessTodayOrders
 //Student Number:S10269305E
 //Student Name:Pang Jia En
-void BulkProcessTodayOrders()
+void BulkProcessPendingOrders()
 {
-    Console.WriteLine("Bulk processing of unprocessed orders for current day");
-    Console.WriteLine("=====================================================");
+    Console.WriteLine("Bulk processing of unprocessed orders");
+    Console.WriteLine("=====================================");
 
     DateTime now = DateTime.Now;
 
-    List<Order> pendingToday = orders
-        .Where(o => o.OrderStatus == "Pending" &&
-                    o.DeliveryDateTime.Date == now.Date)
+    List<Order> pendingOrders = orders
+        .Where(o => o.OrderStatus.Equals("Pending", StringComparison.OrdinalIgnoreCase))
         .ToList();
 
-    Console.WriteLine($"Pending orders in queue: {pendingToday.Count}");
+    int totalPending = pendingOrders.Count;
+    Console.WriteLine($"Pending orders in queue: {totalPending}\n");
 
-    int processed = 0;
-    int preparing = 0;
-    int rejected = 0;
+    int processedCount = 0;
+    int preparingCount = 0;
+    int rejectedCount = 0;
 
-    foreach (Order o in pendingToday)
+    foreach (Order o in pendingOrders)
     {
-        TimeSpan diff = o.DeliveryDateTime - now;
+        TimeSpan timeToDelivery = o.DeliveryDateTime - now;
 
-        if (diff.TotalHours < 1)
+        if (timeToDelivery.TotalHours < 1)
         {
             o.OrderStatus = "Rejected";
-            rejected++;
+            rejectedCount++;
         }
         else
         {
             o.OrderStatus = "Preparing";
-            preparing++;
+            preparingCount++;
         }
 
-        processed++;
+        processedCount++;
     }
 
     int totalOrders = orders.Count;
-    double percentage = totalOrders == 0
-        ? 0
-        : (processed * 100.0 / totalOrders);
+    double percentage =
+        totalOrders > 0
+            ? (processedCount * 100.0 / totalOrders)
+            : 0;
 
-    Console.WriteLine();
     Console.WriteLine("Summary Statistics");
     Console.WriteLine("------------------");
-    Console.WriteLine($"Orders processed: {processed}");
-    Console.WriteLine($"Preparing orders: {preparing}");
-    Console.WriteLine($"Rejected orders: {rejected}");
-    Console.WriteLine($"Auto-processed percentage: {percentage:0.00}%");
-    Console.WriteLine();
+    Console.WriteLine($"Orders processed: {processedCount}");
+    Console.WriteLine($"Preparing orders: {preparingCount}");
+    Console.WriteLine($"Rejected orders: {rejectedCount}");
+    Console.WriteLine($"Auto-processed percentage: {percentage:0.00}%\n");
 }
 
 // Advanced Feature B: Display total order amount
